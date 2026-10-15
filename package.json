@@ -1,0 +1,51 @@
+{
+  "name": "opportunity-radar-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "worker": "tsx src/worker/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:generate": "drizzle-kit generate",
+    "test:integration": "vitest run -c vitest.integration.mts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@auth/drizzle-adapter": "^1.11.3",
+    "cheerio": "^1.2.0",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.4",
+    "lucide-react": "^1.57.0",
+    "next": "^15.5.28",
+    "next-auth": "^5.0.0-beta.32",
+    "next-themes": "^0.4.6",
+    "pg": "^8.23.1",
+    "pg-boss": "^10.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1",
+    "resend": "^6.33.0",
+    "robots-parser": "^3.0.1",
+    "rss-parser": "^3.13.0",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.6.1",
+    "drizzle-kit": "^0.31.11",
+    "postcss": "^8.5.30",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

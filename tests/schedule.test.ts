@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+import { dueActions } from "@/lib/schedule";
+
+const at = (iso: string, over = {}) =>
+  dueActions({ now: new Date(iso), timezone: "America/Chicago", reportHour: 7, reportMinute: 0, researchStatus: "NONE", reportSent: false, ...over });
+
+describe("dispatcher schedule (7:00 AM Central, CDT = UTC−5)", () => {
+  it("does nothing before research lead time", () => {
+    expect(at("2026-10-16T10:50:00Z")).toMatchObject({ date: "2026-10-16", startResearch: false, sendReport: false }); // 5:50 CT
+  });
+  it("starts research one hour before the report", () => {
+    expect(at("2026-10-16T11:00:00Z").startResearch).toBe(true); // 6:00 CT
+  });
+  it("waits for research before sending, then sends", () => {
+    expect(at("2026-10-16T12:00:00Z", { researchStatus: "RUNNING" }).sendReport).toBe(false);
+    expect(at("2026-10-16T12:00:00Z", { researchStatus: "DONE" }).sendReport).toBe(true);
+  });
+  it("sends anyway after the max wait so a stuck run can't block the email", () => {
+    expect(at("2026-10-16T13:30:00Z", { researchStatus: "RUNNING" }).sendReport).toBe(true);
+  });
+  it("catches up later the same day after downtime but never re-sends", () => {
+    expect(at("2026-10-16T20:00:00Z", { researchStatus: "DONE" }).sendReport).toBe(true);
+    expect(at("2026-10-16T20:00:00Z", { researchStatus: "DONE", reportSent: true }).sendReport).toBe(false);
+  });
+  it("uses the local date across UTC midnight", () => {
+    expect(at("2026-10-17T03:00:00Z").date).toBe("2026-10-16"); // 10pm CT
+  });
+});
