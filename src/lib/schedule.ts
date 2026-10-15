@@ -7,7 +7,7 @@
 import { localDate } from "@/lib/format";
 
 export const RESEARCH_LEAD_MINUTES = 60; // research starts this long before the report time
-export const REPORT_WAIT_MAX_MINUTES = 90; // send even if research hasn't finished by then
+export const REPORT_WAIT_MAX_MINUTES = 90; // send even if a research run has been going this long
 
 export function localMinutes(now: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
@@ -22,6 +22,8 @@ export interface DueInput {
   reportHour: number;
   reportMinute: number;
   researchStatus: "NONE" | "RUNNING" | "DONE";
+  /** minutes since today's research run started (RUNNING only) */
+  researchRunningMinutes?: number;
   reportSent: boolean;
 }
 export interface DueResult {
@@ -36,7 +38,8 @@ export function dueActions(i: DueInput): DueResult {
   const reportMin = i.reportHour * 60 + i.reportMinute;
   const researchMin = Math.max(0, reportMin - RESEARCH_LEAD_MINUTES);
   const startResearch = i.researchStatus === "NONE" && nowMin >= researchMin;
-  const researchSettled = i.researchStatus === "DONE" || nowMin >= reportMin + REPORT_WAIT_MAX_MINUTES;
+  // Never send before today's research has at least been attempted; don't let a stuck run block the email.
+  const researchSettled = i.researchStatus === "DONE" || (i.researchStatus === "RUNNING" && (i.researchRunningMinutes ?? 0) >= REPORT_WAIT_MAX_MINUTES);
   const sendReport = !i.reportSent && nowMin >= reportMin && researchSettled;
   return { date, startResearch, sendReport };
 }

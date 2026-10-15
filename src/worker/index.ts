@@ -67,7 +67,8 @@ async function dispatch(boss: PgBoss) {
       .from(emailDeliveries)
       .where(and(eq(emailDeliveries.userId, pref.userId), eq(emailDeliveries.kind, "daily"), eq(emailDeliveries.reportDate, probe.date)));
     const reportSent = Boolean(delivery && (delivery.status === "SENT" || delivery.status === "SKIPPED"));
-    const due = dueActions({ now, timezone: pref.timezone, reportHour: pref.dailyReportHour, reportMinute: pref.dailyReportMinute, researchStatus, reportSent });
+    const researchRunningMinutes = job?.startedAt ? (now.getTime() - job.startedAt.getTime()) / 60_000 : 0;
+    const due = dueActions({ now, timezone: pref.timezone, reportHour: pref.dailyReportHour, reportMinute: pref.dailyReportMinute, researchStatus, researchRunningMinutes, reportSent });
 
     if (due.startResearch) {
       await boss.send(QUEUES.researchRun, { idempotencyKey: key, kind: "DAILY_RESEARCH", triggeredBy: "schedule" } satisfies ResearchRunData, {

@@ -170,7 +170,11 @@ export async function ingestCandidate(opts: {
         set: { lastSeenAt: new Date(), askingPrice: fields.askingPrice, status: fields.listingStatus, sourceRecordId: opts.sourceRecordId ?? null },
       });
 
-    if (c.revenue != null || c.cashFlow != null || c.ebitda != null) {
+    const existingStmts = await tx.select().from(financialStatements).where(eq(financialStatements.opportunityId, oppId));
+    const sameFigures = existingStmts.some(
+      (s) => s.provenance === opts.provenance && s.revenue === (c.revenue ?? null) && s.sde === (c.cashFlow ?? null) && s.ebitda === (c.ebitda ?? null),
+    );
+    if ((c.revenue != null || c.cashFlow != null || c.ebitda != null) && !sameFigures) {
       await tx.insert(financialStatements).values({
         opportunityId: oppId,
         sourceRecordId: opts.sourceRecordId ?? null,

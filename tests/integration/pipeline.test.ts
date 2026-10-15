@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { dataRefreshes, dailyReports, emailDeliveries, financialScenarios, listings, opportunities, opportunityScores, researchJobs, users, watchlistItems } from "@/db/schema";
+import { dataRefreshes, dailyReports, financialStatements, emailDeliveries, financialScenarios, listings, opportunities, opportunityScores, researchJobs, users, watchlistItems } from "@/db/schema";
 import { ingestCandidate, recordEvidence, type Candidate } from "@/lib/ingest";
 import { getOrCreatePreference } from "@/lib/preferences";
 import { scoreOpportunity } from "@/lib/research/scoring-service";
@@ -47,6 +47,9 @@ describe("ingest + dedupe", () => {
     const changes = await db.select().from(dataRefreshes).where(eq(dataRefreshes.field, "askingPrice"));
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ oldValue: "1200000", newValue: "1100000" });
+    // Re-seeing identical figures must not duplicate the statement.
+    await ingestCandidate({ candidate: listing(), sourceKey: "manual_url", url: "https://broker-a.example/l/1", provenance: "SELLER_REPORTED" });
+    expect((await db.select().from(financialStatements)).length).toBe(2);
   });
 
   it("does not merge different businesses", async () => {

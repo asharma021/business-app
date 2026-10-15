@@ -15,8 +15,14 @@ describe("dispatcher schedule (7:00 AM Central, CDT = UTC−5)", () => {
     expect(at("2026-10-16T12:00:00Z", { researchStatus: "RUNNING" }).sendReport).toBe(false);
     expect(at("2026-10-16T12:00:00Z", { researchStatus: "DONE" }).sendReport).toBe(true);
   });
-  it("sends anyway after the max wait so a stuck run can't block the email", () => {
-    expect(at("2026-10-16T13:30:00Z", { researchStatus: "RUNNING" }).sendReport).toBe(true);
+  it("sends anyway once a run has been going 90 minutes, so a stuck run can't block the email", () => {
+    expect(at("2026-10-16T13:30:00Z", { researchStatus: "RUNNING", researchRunningMinutes: 30 }).sendReport).toBe(false);
+    expect(at("2026-10-16T13:30:00Z", { researchStatus: "RUNNING", researchRunningMinutes: 95 }).sendReport).toBe(true);
+  });
+  it("after downtime, starts research first and holds the report until it finishes", () => {
+    const r = at("2026-10-16T20:00:00Z", { researchStatus: "NONE" });
+    expect(r.startResearch).toBe(true);
+    expect(r.sendReport).toBe(false);
   });
   it("catches up later the same day after downtime but never re-sends", () => {
     expect(at("2026-10-16T20:00:00Z", { researchStatus: "DONE" }).sendReport).toBe(true);
