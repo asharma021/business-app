@@ -50,7 +50,7 @@ function Rating({ value, label }: { value: number | null; label: string }) {
 }
 
 const ROWS: [keyof CalculatorResult, string][] = [
-  ["sde", "Reported SDE"],
+  ["sde", "Starting earnings"],
   ["managerCost", "Manager replacement"],
   ["maintenanceCapex", "Maintenance capex + other costs"],
   ["annualDebtService", "Annual debt service"],
@@ -78,7 +78,14 @@ export default async function OpportunityPage({ params, searchParams }: { params
 
   return (
     <>
-      {sp.imported && <div className="mb-4"><Notice tone="ok">Listing imported. Figures are labeled seller-reported until you verify them with documents.</Notice></div>}
+      {sp.imported && (
+        <div className="mb-4">
+          <Notice tone="ok">
+            Listing saved.{" "}
+            {d.statements.some((s) => s.provenance === "VERIFIED") ? "Figures are marked verified." : "Figures are labeled seller-reported until you verify them with documents."}
+          </Notice>
+        </div>
+      )}
       <PageHeader
         title={o.title}
         description={
@@ -137,7 +144,7 @@ export default async function OpportunityPage({ params, searchParams }: { params
               <div className="mt-5 overflow-x-auto">
                 <table className="w-full min-w-[520px] text-sm">
                   <caption className="mb-2 text-left text-xs text-muted">
-                    Scenarios use your saved financing ({d.scenarios.BASE ? String((d.scenarios.BASE.inputs as { financing: { structure: string } }).financing.structure).replaceAll("_", " ").toLowerCase() : ""}) and tax assumptions. Conservative: SDE −{Math.round((1 - SCENARIO_ADJUSTMENTS.CONSERVATIVE.sdeMultiplier) * 100)}%, rates +{SCENARIO_ADJUSTMENTS.CONSERVATIVE.rateDeltaPts} pts, extra costs {SCENARIO_ADJUSTMENTS.CONSERVATIVE.extraCostPctOfSde * 100}% of SDE. Optimistic: SDE +{Math.round((SCENARIO_ADJUSTMENTS.OPTIMISTIC.sdeMultiplier - 1) * 100)}%.
+                    Scenarios use your saved financing ({d.scenarios.BASE ? String((d.scenarios.BASE.inputs as { financing: { structure: string } }).financing.structure).replaceAll("_", " ").toLowerCase() : ""}) and tax assumptions. Conservative: earnings −{Math.round((1 - SCENARIO_ADJUSTMENTS.CONSERVATIVE.sdeMultiplier) * 100)}%, rates +{SCENARIO_ADJUSTMENTS.CONSERVATIVE.rateDeltaPts} pts, extra costs {SCENARIO_ADJUSTMENTS.CONSERVATIVE.extraCostPctOfSde * 100}% of earnings. Optimistic: earnings +{Math.round((SCENARIO_ADJUSTMENTS.OPTIMISTIC.sdeMultiplier - 1) * 100)}%.
                   </caption>
                   <thead className="border-b border-line text-xs text-muted">
                     <tr><th scope="col" className="py-1.5 text-left font-medium"> </th><th scope="col" className="py-1.5 text-right font-medium">Conservative</th><th scope="col" className="py-1.5 text-right font-medium">Base</th><th scope="col" className="py-1.5 text-right font-medium">Optimistic</th></tr>
@@ -160,7 +167,10 @@ export default async function OpportunityPage({ params, searchParams }: { params
                     ))}
                   </tbody>
                 </table>
-                <ul className="mt-3 space-y-1 text-xs text-muted">{base.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                <ul className="mt-3 space-y-1 text-xs text-muted">
+                  <li>Starting earnings: {base.earningsBasis === "EBITDA" ? "reported EBITDA (SDE not disclosed)" : "reported SDE / cash flow"}. Revenue is never treated as earnings.</li>
+                  {base.warnings.map((w) => <li key={w}>{w}</li>)}
+                </ul>
                 <Link href={`/calculator?opp=${o.id}`} className="mt-3 inline-block text-sm text-accent hover:underline">Adjust assumptions in the calculator</Link>
               </div>
             )}
@@ -251,7 +261,7 @@ export default async function OpportunityPage({ params, searchParams }: { params
                   {/^https?:/.test(l.url) ? (
                     <a href={l.url} target="_blank" rel="noopener noreferrer nofollow" className="min-w-0 flex-1 truncate text-accent hover:underline">{l.url}</a>
                   ) : (
-                    <span className="flex-1 text-muted">Pasted document</span>
+                    <span className="flex-1 text-muted">{l.url.startsWith("csv:") ? "CSV row (no link)" : l.url.startsWith("manual:") ? "Entered manually (no link)" : "Pasted text (no link)"}</span>
                   )}
                   <span className="text-xs text-muted">first seen {daysAgo(l.firstSeenAt)}, last {daysAgo(l.lastSeenAt)}</span>
                 </li>

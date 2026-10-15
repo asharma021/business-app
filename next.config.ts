@@ -9,6 +9,8 @@ const securityHeaders = [
 
 const config: NextConfig = {
   serverExternalPackages: ["pg", "pg-boss"],
+  // CSV uploads go through a server action; the default 1 MB body limit is too tight for a 1 MB file.
+  experimental: { serverActions: { bodySizeLimit: "2mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

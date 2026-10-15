@@ -70,16 +70,27 @@ export interface DedupeCandidate {
 
 /**
  * Fuzzy duplicate check used after the exact fingerprint misses.
- * Requires same state, similar title, and at least one financial figure within
- * tolerance, with no figure contradicting it.
+ * Deliberately conservative — a false merge hides a real opportunity, while a
+ * missed merge only shows the same business twice. Requires:
+ *  - same state (and city when both are known)
+ *  - similar titles, with no conflicting numbers ("Unit 12" vs "Unit 13")
+ *  - cash flow within 5% (or, if absent, revenue within 5%)
+ *  - no contradicting figure (asking price more than 25% apart, revenue more than 5% apart)
+ * Callers must also refuse merges between two different links from the same source (see ingest.ts).
  */
 export function isLikelyDuplicate(a: DedupeCandidate, b: DedupeCandidate): boolean {
   if (!a.state || !b.state || a.state.toUpperCase() !== b.state.toUpperCase()) return false;
   if (a.city && b.city && a.city.trim().toLowerCase() !== b.city.trim().toLowerCase()) return false;
-  if (overlap(tokens(a.title), tokens(b.title)) < 0.6) return false;
-  const checks = [near(a.cashFlow, b.cashFlow, 0.05), near(a.revenue, b.revenue, 0.05), near(a.askingPrice, b.askingPrice, 0.15)];
-  const [cf, rev, price] = checks;
-  if (cf === false || rev === false) return false; // a hard figure contradicts
-  if (cf === true) return true; // cash flow within 5% is a strong signal
-  return rev === true && price !== false; // otherwise need revenue match and no price contradiction
+  const ta = tokens(a.title);
+  const tb = tokens(b.title);
+  const numsA = [...ta].filter((t) => /\d/.test(t));
+  const numsB = [...tb].filter((t) => /\d/.test(t));
+  if (numsA.length && numsB.length && !numsA.some((n) => tb.has(n))) return false;
+  if (overlap(ta, tb) < 0.6) return false;
+  const cf = near(a.cashFlow, b.cashFlow, 0.05);
+  const rev = near(a.revenue, b.revenue, 0.05);
+  const price = near(a.askingPrice, b.askingPrice, 0.25);
+  if (cf === false || rev === false || price === false) return false; // a disclosed figure contradicts
+  if (cf === true) return true;
+  return rev === true;
 }

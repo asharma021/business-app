@@ -32,3 +32,31 @@ describe("dispatcher schedule (7:00 AM Central, CDT = UTC−5)", () => {
     expect(at("2026-10-17T03:00:00Z").date).toBe("2026-10-16"); // 10pm CT
   });
 });
+
+describe("7:00 AM America/Chicago across daylight saving time", () => {
+  const due = (iso: string) => dueActions({ now: new Date(iso), timezone: "America/Chicago", reportHour: 7, reportMinute: 0, researchStatus: "DONE", reportSent: false });
+  it("winter (CST, UTC−6): 7:00 local is 13:00 UTC", () => {
+    expect(due("2026-01-15T12:59:00Z").sendReport).toBe(false);
+    expect(due("2026-01-15T13:00:00Z").sendReport).toBe(true);
+  });
+  it("summer (CDT, UTC−5): 7:00 local is 12:00 UTC", () => {
+    expect(due("2026-07-15T11:59:00Z").sendReport).toBe(false);
+    expect(due("2026-07-15T12:00:00Z").sendReport).toBe(true);
+  });
+  it("spring-forward day (Sun 2026-03-08): 7:00 CDT = 12:00 UTC", () => {
+    expect(due("2026-03-08T11:59:00Z").sendReport).toBe(false);
+    expect(due("2026-03-08T12:00:00Z").sendReport).toBe(true);
+    expect(due("2026-03-08T12:00:00Z").date).toBe("2026-03-08");
+  });
+  it("fall-back day (Sun 2026-11-01): 7:00 CST = 13:00 UTC", () => {
+    expect(due("2026-11-01T12:59:00Z").sendReport).toBe(false);
+    expect(due("2026-11-01T13:00:00Z").sendReport).toBe(true);
+  });
+  it("research starts at 6:00 local in both seasons", () => {
+    const start = (iso: string) => dueActions({ now: new Date(iso), timezone: "America/Chicago", reportHour: 7, reportMinute: 0, researchStatus: "NONE", reportSent: false }).startResearch;
+    expect(start("2026-01-15T11:59:00Z")).toBe(false);
+    expect(start("2026-01-15T12:00:00Z")).toBe(true); // 6:00 CST
+    expect(start("2026-07-15T10:59:00Z")).toBe(false);
+    expect(start("2026-07-15T11:00:00Z")).toBe(true); // 6:00 CDT
+  });
+});

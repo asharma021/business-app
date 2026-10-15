@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Radar } from "lucide-react";
+import { AuthError } from "next-auth";
 import { auth, signIn } from "@/auth";
 import { features } from "@/lib/env";
 import { Button, Input, Notice } from "@/components/ui";
@@ -20,7 +21,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   async function emailSignIn(form: FormData) {
     "use server";
-    await signIn("resend", { email: String(form.get("email") ?? "").trim().toLowerCase(), redirectTo: "/" });
+    try {
+      await signIn("resend", { email: String(form.get("email") ?? "").trim().toLowerCase(), redirectTo: "/", redirect: false });
+    } catch (e) {
+      // Don't reveal which emails are allowed: a blocked address sees the same "check your inbox" screen.
+      if (!(e instanceof AuthError && e.type === "AccessDenied")) throw e;
+    }
+    redirect("/login/verify");
   }
   async function googleSignIn() {
     "use server";
@@ -36,7 +43,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <h1 className="text-xl font-semibold">Sign in</h1>
         <p className="mt-1 text-sm text-muted">We'll email you a one-time sign-in link.</p>
         <div className="mt-6 space-y-4">
-          {sp.sent && <Notice tone="ok">Check your inbox for the sign-in link.{features.email() ? "" : " (Email isn't configured — the link was printed in the server log.)"}</Notice>}
           {sp.error && <Notice tone="error">{ERRORS[sp.error] ?? "Sign-in failed. Try again."}</Notice>}
           <form action={emailSignIn} className="space-y-3">
             <label htmlFor="email" className="sr-only">Email</label>

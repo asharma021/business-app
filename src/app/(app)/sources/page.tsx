@@ -7,6 +7,7 @@ import { features } from "@/lib/env";
 import { Badge, Notice, PageHeader, Panel } from "@/components/ui";
 import { RunResearchButton } from "@/components/run-research-button";
 import { RssForm, SourceToggle } from "./client";
+import { ConnectionChecks } from "@/components/ops-buttons";
 import { inArray } from "drizzle-orm";
 
 export const metadata = { title: "Research sources" };
@@ -52,6 +53,9 @@ export default async function SourcesPage() {
           </Panel>
         </div>
         <div className="space-y-6">
+          <Panel title="Connection checks">
+            <ConnectionChecks />
+          </Panel>
           <Panel title="RSS feeds">
             <RssForm feeds={((rss?.config as { feeds?: string[] })?.feeds ?? []).join("\n")} />
           </Panel>

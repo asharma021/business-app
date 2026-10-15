@@ -91,6 +91,7 @@ export const jobKind = pgEnum("job_kind", [
   "MANUAL_RESEARCH",
   "OPPORTUNITY_RESEARCH",
   "MARKET_DATA",
+  "IMPORT",
 ]);
 export const jobStatus = pgEnum("job_status", ["QUEUED", "RUNNING", "SUCCEEDED", "PARTIAL", "FAILED"]);
 export const deliveryStatus = pgEnum("delivery_status", ["PENDING", "SENT", "FAILED", "SKIPPED"]);
@@ -641,3 +642,11 @@ export type NewOpportunity = typeof opportunities.$inferInsert;
 export type Source = typeof sources.$inferSelect;
 export type Preference = typeof preferences.$inferSelect;
 export type ResearchReport = typeof researchReports.$inferSelect;
+
+/** Liveness record written by the background worker on start and every dispatch. */
+export const workerHeartbeats = pgTable("worker_heartbeat", {
+  id: text("id").primaryKey(), // one row per worker process name
+  startedAt: timestamp("started_at", { mode: "date" }).notNull(),
+  lastBeatAt: timestamp("last_beat_at", { mode: "date" }).notNull(),
+  host: text("host"),
+});

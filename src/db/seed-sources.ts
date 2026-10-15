@@ -87,6 +87,26 @@ export const SOURCE_SEED: SeedSource[] = [
     termsNote: "Text you paste (listing, CIM excerpt, broker email). Treated as untrusted data during extraction.",
     config: {},
   },
+  {
+    key: "manual_entry",
+    name: "Manual entry form",
+    kind: "DOCUMENT",
+    access: "MANUAL_ONLY",
+    enabled: true,
+    reliability: 75,
+    termsNote: "Figures you type in from a listing or documents. Marked verified only when you tick that box.",
+    config: {},
+  },
+  {
+    key: "csv_import",
+    name: "CSV upload",
+    kind: "DOCUMENT",
+    access: "MANUAL_ONLY",
+    enabled: true,
+    reliability: 70,
+    termsNote: "Spreadsheet of listings you collected. Parsed deterministically — no AI needed.",
+    config: {},
+  },
   // ── Proposed / not automated ──────────────────────────────────────────
   ...(
     [

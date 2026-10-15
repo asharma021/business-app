@@ -114,7 +114,7 @@ export class AnthropicProvider implements LLMProvider {
     toolDescription: string;
     maxTokens?: number;
   }): Promise<{ data: T; usage: Usage }> {
-    const inputSchema = zodToJsonSchema(schema, { target: "jsonSchema7", $refStrategy: "none" }) as Anthropic.Messages.Tool.InputSchema;
+    const { $schema: _drop, ...inputSchema } = zodToJsonSchema(schema, { target: "jsonSchema7", $refStrategy: "none" }) as Record<string, unknown>;
     const usage = emptyUsage();
     const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: prompt }];
     let lastError = "";
@@ -124,7 +124,7 @@ export class AnthropicProvider implements LLMProvider {
         max_tokens: maxTokens,
         system,
         messages,
-        tools: [{ name: toolName, description: toolDescription, input_schema: inputSchema }],
+        tools: [{ name: toolName, description: toolDescription, input_schema: inputSchema as Anthropic.Messages.Tool.InputSchema }],
         tool_choice: { type: "tool", name: toolName },
       });
       usage.inputTokens += res.usage.input_tokens;

@@ -109,7 +109,19 @@ export async function ingestCandidate(opts: {
         .from(opportunities)
         .where(and(eq(opportunities.state, c.state), gte(opportunities.firstDiscoveredAt, new Date(Date.now() - 365 * 86_400_000))))
         .limit(500);
-      oppId = recent.find((o) => isLikelyDuplicate(o, c))?.id ?? null;
+      for (const o of recent.filter((r) => isLikelyDuplicate(r, c))) {
+        // One site never lists the same business at two different links, so a same-source
+        // match with a different URL is a different business that merely looks similar.
+        const sameSourceOtherUrl = /^https?:/.test(opts.url)
+          ? (await tx.select({ url: listings.url }).from(listings).where(and(eq(listings.opportunityId, o.id), eq(listings.sourceId, src.id)))).some(
+              (l) => /^https?:/.test(l.url) && l.url !== opts.url,
+            )
+          : false;
+        if (!sameSourceOtherUrl) {
+          oppId = o.id;
+          break;
+        }
+      }
     }
 
     const changes: IngestResult["changes"] = [];

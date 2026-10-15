@@ -13,6 +13,10 @@ export default defineConfig({
       AUTH_SECRET: "test-secret-test-secret-test-secret-123",
       ALLOWED_EMAILS: "owner@example.com",
       APP_URL: "http://localhost:3000",
+      // Real SDKs are pointed at local mock servers (tests/integration/mocks.ts) — no live calls.
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:47011",
+      RESEND_BASE_URL: "http://127.0.0.1:47012",
+      EMAIL_FROM: "Radar <radar@example.com>",
     },
   },
 });

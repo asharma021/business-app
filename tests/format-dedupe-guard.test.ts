@@ -39,6 +39,16 @@ describe("dedupe fingerprint", () => {
     expect(isLikelyDuplicate(a, { ...a, state: "OK" })).toBe(false);
     expect(isLikelyDuplicate(a, { ...a, title: "HVAC service company" })).toBe(false);
   });
+  it("treats differing numbers in titles as different businesses", () => {
+    const x = { title: "Car wash location 12", state: "TX", city: "Dallas", cashFlow: 200_000 };
+    expect(isLikelyDuplicate(x, { ...x, title: "Car wash location 13" })).toBe(false);
+    expect(isLikelyDuplicate(x, { ...x, title: "Location 12 car wash for sale" })).toBe(true);
+  });
+  it("a large asking-price gap blocks the merge even when cash flow matches", () => {
+    const x = { title: "Commercial cleaning company", state: "TX", city: "Dallas", cashFlow: 300_000, askingPrice: 900_000 };
+    expect(isLikelyDuplicate(x, { ...x, askingPrice: 1_000_000 })).toBe(true); // ~10% apart (e.g. a price cut)
+    expect(isLikelyDuplicate(x, { ...x, askingPrice: 1_500_000 })).toBe(false);
+  });
   it("buckets to two significant figures", () => {
     expect(bucket(1_249_000)).toBe("1200000");
     expect(bucket(null)).toBe("x");

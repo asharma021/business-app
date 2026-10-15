@@ -52,6 +52,16 @@ describe("ingest + dedupe", () => {
     expect((await db.select().from(financialStatements)).length).toBe(2);
   });
 
+  it("never merges two different links from the same site", async () => {
+    const base = listing({ title: "Commercial Cleaning Company", askingPrice: 1_000_000, cashFlow: 300_000 });
+    await ingestCandidate({ candidate: base, sourceKey: "manual_url", url: "https://broker.example/l/100", provenance: "SELLER_REPORTED" });
+    const b = await ingestCandidate({ candidate: { ...base, cashFlow: 305_000 }, sourceKey: "manual_url", url: "https://broker.example/l/200", provenance: "SELLER_REPORTED" });
+    expect(b.created).toBe(true);
+    // …but the same business on a different site still merges
+    const c = await ingestCandidate({ candidate: { ...base, cashFlow: 302_000 }, sourceKey: "csv_import", url: "https://other-broker.example/x", provenance: "SELLER_REPORTED" });
+    expect(c.created).toBe(false);
+  });
+
   it("does not merge different businesses", async () => {
     await ingestCandidate({ candidate: listing(), sourceKey: "manual_url", url: "https://a.example/1", provenance: "SELLER_REPORTED" });
     await ingestCandidate({ candidate: listing({ title: "HVAC Service Company", industry: "HVAC", cashFlow: 300_000 }), sourceKey: "manual_url", url: "https://a.example/2", provenance: "SELLER_REPORTED" });

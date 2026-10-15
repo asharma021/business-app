@@ -24,8 +24,8 @@ import { looksLikeInjection } from "@/lib/ai/guard";
 import { costUsd } from "@/lib/ai/provider";
 import { calculate } from "@/lib/finance/calculator";
 import { money } from "@/lib/format";
-import { ingestCandidate, recordEvidence, type Candidate } from "@/lib/ingest";
-import { addJobUsage, aiSpendLast24h, bumpJob, jobLog } from "@/lib/jobs";
+import { ingestCandidate, recordEvidence, type Candidate, type IngestResult } from "@/lib/ingest";
+import { addJobUsage, aiSpendLast24h, assertWithinAiBudget, bumpJob, jobLog, withJob } from "@/lib/jobs";
 import { calculatorInputsFor } from "@/lib/preferences";
 import { fetchCbp, type CbpConfig } from "@/lib/sources/census";
 import { FetchBlockedError, htmlToText, politeFetch } from "@/lib/sources/http";
@@ -47,9 +47,16 @@ async function markSource(key: string, ok: boolean, error?: string) {
 
 export class ImportError extends Error {}
 
-export async function importFromText(text: string, url: string | null, jobId?: string | null) {
+export type ImportResult = IngestResult & { flags: string[] };
+
+export async function importFromText(text: string, url: string | null, jobId?: string | null, userId = "system"): Promise<ImportResult> {
   if (text.trim().length < 80) throw new ImportError("Please paste more of the listing (at least a few sentences).");
-  if (!features.ai()) throw new ImportError("AI extraction needs ANTHROPIC_API_KEY. Configure it to import listings.");
+  if (!features.ai()) throw new ImportError("AI extraction needs ANTHROPIC_API_KEY. Use the details form or CSV upload, or configure the key.");
+  // Track the extraction's AI usage in its own job unless we're already inside one.
+  if (!jobId) return withJob("IMPORT", `import:${crypto.randomUUID()}`, userId, (id) => importFromText(text, url, id, userId));
+  await assertWithinAiBudget(env().AI_DAILY_BUDGET_USD).catch((e) => {
+    throw new ImportError((e as Error).message);
+  });
   const ev = await recordEvidence(url ? "manual_url" : "document", { url, text });
   const { data, usage } = await extractListing(text, url);
   await addJobUsage(jobId, usage);
@@ -67,7 +74,7 @@ export async function importFromText(text: string, url: string | null, jobId?: s
   return { ...res, flags };
 }
 
-export async function importFromUrl(url: string, jobId?: string | null) {
+export async function importFromUrl(url: string, jobId?: string | null, userId = "system"): Promise<ImportResult> {
   let fetched;
   try {
     fetched = await politeFetch(url);
@@ -85,7 +92,7 @@ export async function importFromUrl(url: string, jobId?: string | null) {
   }
   const { title, text } = htmlToText(fetched.body);
   if (text.length < 200) throw new ImportError("The page had too little readable text (it may render with JavaScript or require a login). Paste the listing text instead.");
-  return importFromText(`${title ?? ""}\n\n${text}`, fetched.url, jobId);
+  return importFromText(`${title ?? ""}\n\n${text}`, fetched.url, jobId, userId);
 }
 
 // ───────────────────────── Collectors ─────────────────────────
@@ -249,7 +256,7 @@ export async function researchOpportunityById(opportunityId: string, jobId: stri
       evidenceUrls,
       askingPrice: opp.askingPrice,
       revenue: opp.revenue,
-      cashFlow: opp.cashFlow,
+      cashFlow: opp.cashFlow ?? opp.ebitda, // either earnings figure counts as disclosed earnings
       bestFinancialProvenance: await bestProvenance(opportunityId),
     });
 
@@ -279,7 +286,7 @@ export async function researchOpportunityById(opportunityId: string, jobId: stri
     for (const l of ls) if (!l.url.startsWith("document:")) cites.set(l.url, { url: l.url, title: "Original listing", citedText: null, section: "listing", provenance: "SELLER_REPORTED" });
     if (cites.size) await db.insert(researchCitations).values([...cites.values()].map((c) => ({ reportId: saved.id, ...c })));
 
-    await db.update(opportunities).set({ researchStatus: opp.cashFlow == null || opp.askingPrice == null ? "NEEDS_INFO" : "RESEARCHED" }).where(eq(opportunities.id, opportunityId));
+    await db.update(opportunities).set({ researchStatus: (opp.cashFlow == null && opp.ebitda == null) || opp.askingPrice == null ? "NEEDS_INFO" : "RESEARCHED" }).where(eq(opportunities.id, opportunityId));
     await scoreOpportunity(opportunityId);
     await bumpJob(jobId, { researched: 1 });
     await jobLog(jobId, "info", `Researched "${opp.title}" → ${report.recommendation}${flags.length ? ` (${flags.length} audit flags)` : ""}`);

@@ -8,6 +8,8 @@ import { requireUser } from "@/auth";
 import { db } from "@/db";
 import { notes, notifications, opportunities, preferences, sources, userFeedback, watchlistItems } from "@/db/schema";
 import { audit, rateLimited, RateLimitError } from "@/lib/audit-log";
+import { env, features } from "@/lib/env";
+import { assertWithinAiBudget, BudgetExceededError } from "@/lib/jobs";
 import { FinancingDefaultsSchema } from "@/lib/preferences";
 import { enqueueManualResearch, enqueueOpportunityResearch } from "@/lib/queue";
 import { importFromText, importFromUrl, ImportError } from "@/lib/research/pipeline";
@@ -19,7 +21,7 @@ export type ActionState = { ok?: boolean; error?: string; message?: string; id?:
 const id = z.string().min(1).max(64);
 
 function friendly(e: unknown): string {
-  if (e instanceof ImportError || e instanceof RateLimitError || e instanceof z.ZodError) return e instanceof z.ZodError ? e.issues[0]?.message ?? "Invalid input" : e.message;
+  if (e instanceof ImportError || e instanceof RateLimitError || e instanceof BudgetExceededError || e instanceof z.ZodError) return e instanceof z.ZodError ? e.issues[0]?.message ?? "Invalid input" : e.message;
   console.error(e);
   return "Something went wrong on the server. Check the server log for details.";
 }
@@ -80,6 +82,8 @@ export async function completeNote(noteId: string, opportunityId: string) {
 export async function requestResearch(opportunityId: string): Promise<ActionState> {
   try {
     const user = await requireUser();
+    await assertWithinAiBudget(env().AI_DAILY_BUDGET_USD);
+    if (!features.ai()) return { error: "AI research needs ANTHROPIC_API_KEY to be configured." };
     await rateLimited(user.id, "research.request", 10, 60, opportunityId);
     await db.update(opportunities).set({ researchStatus: "QUEUED" }).where(eq(opportunities.id, opportunityId));
     await enqueueOpportunityResearch(opportunityId, user.id);
@@ -104,7 +108,7 @@ export async function importListing(_prev: ActionState, form: FormData): Promise
     const input = ImportInput.parse({ url: form.get("url") || undefined, text: form.get("text") || undefined });
     if (!input.url && !input.text) return { error: "Paste a listing URL or the listing text." };
     await rateLimited(user.id, "listing.import", 30, 60);
-    const res = input.text ? await importFromText(input.text, input.url ?? null) : await importFromUrl(input.url!);
+    const res = input.text ? await importFromText(input.text, input.url ?? null, null, user.id) : await importFromUrl(input.url!, null, user.id);
     await audit(user.id, "listing.imported", "opportunity", res.opportunityId, { created: res.created });
     createdId = res.opportunityId;
   } catch (e) {
@@ -243,4 +247,98 @@ export async function markNotificationsRead() {
   const user = await requireUser();
   await db.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.userId, user.id), isNull(notifications.readAt)));
   revalidatePath("/", "layout");
+}
+
+// ───────── Manual & CSV import (no AI needed) ─────────
+
+export async function importManualListing(_prev: ActionState, form: FormData): Promise<ActionState> {
+  let createdId: string | undefined;
+  try {
+    const user = await requireUser();
+    await rateLimited(user.id, "listing.manual", 60, 60);
+    const { ManualListingInput, importManual } = await import("@/lib/manual-import");
+    const input = ManualListingInput.parse({
+      ...Object.fromEntries(["title", "url", "type", "industry", "city", "state", "askingPrice", "revenue", "cashFlow", "ebitda", "yearEstablished", "employees", "sellerFinancing", "description"].map((k) => [k, form.get(k) ?? ""])),
+      verified: form.get("verified") === "on",
+    });
+    const res = await importManual(input);
+    await audit(user.id, "listing.manual_entry", "opportunity", res.opportunityId, { created: res.created, verified: input.verified });
+    createdId = res.opportunityId;
+  } catch (e) {
+    return { error: friendly(e) };
+  }
+  redirect(`/opportunities/${createdId}?imported=1`);
+}
+
+export type CsvActionState = (ActionState & { summary?: import("@/lib/manual-import").CsvImportSummary }) | undefined;
+
+export async function importCsvListings(_prev: CsvActionState, form: FormData): Promise<CsvActionState> {
+  try {
+    const user = await requireUser();
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file to upload." };
+    const { CSV_MAX_BYTES, importCsv } = await import("@/lib/manual-import");
+    if (file.size > CSV_MAX_BYTES) return { error: "File is larger than 1 MB. Split it into smaller files." };
+    if (!/\.csv$/i.test(file.name) && !/csv|text\/plain|excel/i.test(file.type)) return { error: "Upload a .csv file (export from Excel or Google Sheets as CSV)." };
+    await rateLimited(user.id, "listing.csv", 20, 60);
+    const summary = await importCsv(await file.text());
+    await audit(user.id, "listing.csv_import", undefined, undefined, { created: summary.created, merged: summary.merged, errors: summary.errors.length });
+    revalidatePath("/opportunities");
+    return { ok: summary.created + summary.merged > 0, summary };
+  } catch (e) {
+    return { error: friendly(e) };
+  }
+}
+
+// ───────── Email & connection checks ─────────
+
+export async function sendTestEmailAction(): Promise<ActionState> {
+  try {
+    const user = await requireUser();
+    await rateLimited(user.id, "email.test", 5, 60);
+    const { getOrCreatePreference } = await import("@/lib/preferences");
+    const { sendTestEmail } = await import("@/lib/report/deliver");
+    const pref = await getOrCreatePreference(user.id, user.email);
+    const to = pref.reportEmail ?? user.email;
+    if (!to) return { error: "No email address to send to. Add one under Daily report." };
+    const r = await sendTestEmail(user.id, to);
+    return { ok: true, message: `Test email sent to ${to} (Resend id ${r.id}). Check your inbox and spam folder.` };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: `Email failed: ${msg}` };
+  }
+}
+
+export async function sendReportNowAction(): Promise<ActionState> {
+  try {
+    const user = await requireUser();
+    await rateLimited(user.id, "email.report_now", 5, 60);
+    const { getOrCreatePreference } = await import("@/lib/preferences");
+    const { sendReportNow } = await import("@/lib/report/deliver");
+    const { localDate } = await import("@/lib/format");
+    const pref = await getOrCreatePreference(user.id, user.email);
+    const date = localDate(new Date(), pref.timezone);
+    const r = await sendReportNow(user.id, pref, date);
+    revalidatePath("/reports");
+    return {
+      ok: true,
+      message: r.status === "SENT" ? `Today's report was rebuilt from current data and emailed (Resend id ${r.id}).` : "Today's report was rebuilt. It wasn't emailed because email isn't configured.",
+      id: date,
+    };
+  } catch (e) {
+    return { error: `Couldn't send the report: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+export type ChecksState = { results?: import("@/lib/health/checks").CheckResult[]; error?: string } | undefined;
+
+export async function runConnectionChecks(_prev: ChecksState, form: FormData): Promise<ChecksState> {
+  try {
+    const user = await requireUser();
+    await rateLimited(user.id, "checks.run", 10, 60);
+    const { runAllChecks } = await import("@/lib/health/checks");
+    return { results: await runAllChecks({ webSearch: form.get("webSearch") === "on" }) };
+  } catch (e) {
+    return { error: friendly(e) };
+  }
 }

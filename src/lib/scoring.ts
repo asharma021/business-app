@@ -57,6 +57,7 @@ export interface ScoreInput {
     askingPrice: number | null;
     revenue: number | null;
     cashFlow: number | null;
+    ebitda?: number | null;
     state: string | null;
     metro: string | null;
     industry: string | null;
@@ -117,8 +118,9 @@ export function confidenceScore(i: ScoreInput): { score: number; evidence: strin
   const o = i.opportunity;
   if (o.askingPrice !== null) (s += 15), e.push("Asking price disclosed (+15)");
   else e.push("Asking price not disclosed (+0)");
-  if (o.cashFlow !== null) (s += 20), e.push("Cash flow disclosed (+20)");
-  else e.push("Cash flow not disclosed (+0)");
+  if (o.cashFlow !== null) (s += 20), e.push("Cash flow (SDE) disclosed (+20)");
+  else if (o.ebitda != null) (s += 20), e.push("EBITDA disclosed (+20)");
+  else e.push("No earnings figure disclosed (+0)");
   if (o.revenue !== null) (s += 10), e.push("Revenue disclosed (+10)");
   const prov = { VERIFIED: 30, THIRD_PARTY: 15, SELLER_REPORTED: 10, AI_ESTIMATE: 0 } as const;
   if (i.bestFinancialProvenance) {

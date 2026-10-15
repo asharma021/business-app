@@ -8,10 +8,11 @@
 import PgBoss from "pg-boss";
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "@/db";
-import { emailDeliveries, notifications, preferences, researchJobs } from "@/db/schema";
+import { emailDeliveries, notifications, preferences, researchJobs, workerHeartbeats } from "@/db/schema";
+import { hostname } from "node:os";
 import { seedSources } from "@/db/seed-sources";
 import { env } from "@/lib/env";
-import { finishJob, jobLog, startJob } from "@/lib/jobs";
+import { assertWithinAiBudget, finishJob, jobLog, startJob, withJob } from "@/lib/jobs";
 import { ensureQueues, QUEUES, type DailyReportData, type ResearchOpportunityData, type ResearchRunData } from "@/lib/queue";
 import { researchOpportunityById, runResearchCycle } from "@/lib/research/pipeline";
 import { deliverDailyEmail, generateDailyReport } from "@/lib/report/deliver";
@@ -54,7 +55,17 @@ async function handleDailyReport(data: DailyReportData, isFinalAttempt: boolean)
   }
 }
 
+const STARTED_AT = new Date();
+async function heartbeat() {
+  const now = new Date();
+  await db
+    .insert(workerHeartbeats)
+    .values({ id: "worker", startedAt: STARTED_AT, lastBeatAt: now, host: hostname() })
+    .onConflictDoUpdate({ target: workerHeartbeats.id, set: { lastBeatAt: now, startedAt: STARTED_AT, host: hostname() } });
+}
+
 async function dispatch(boss: PgBoss) {
+  await heartbeat();
   const prefs = await db.select().from(preferences);
   const now = new Date();
   for (const pref of prefs) {
@@ -71,24 +82,27 @@ async function dispatch(boss: PgBoss) {
     const due = dueActions({ now, timezone: pref.timezone, reportHour: pref.dailyReportHour, reportMinute: pref.dailyReportMinute, researchStatus, researchRunningMinutes, reportSent });
 
     if (due.startResearch) {
-      await boss.send(QUEUES.researchRun, { idempotencyKey: key, kind: "DAILY_RESEARCH", triggeredBy: "schedule" } satisfies ResearchRunData, {
+      // Duplicate protection comes from research_job.idempotency_key; the short singleton window only
+      // collapses repeat sends within one dispatch interval so a lost job can be re-queued next tick.
+      const id = await boss.send(QUEUES.researchRun, { idempotencyKey: key, kind: "DAILY_RESEARCH", triggeredBy: "schedule" } satisfies ResearchRunData, {
         singletonKey: key,
-        singletonHours: 6,
+        singletonMinutes: 9,
         retryLimit: 2,
         retryDelay: 300,
         expireInHours: 3,
       });
-      console.log(`dispatch: queued research ${key}`);
+      console.log(id ? `dispatch: queued research ${key} (job ${id})` : `dispatch: research ${key} already queued`);
     }
     if (due.sendReport && delivery?.status !== "FAILED") {
-      await boss.send(QUEUES.dailyReport, { userId: pref.userId, reportDate: due.date } satisfies DailyReportData, {
+      // email_delivery's unique (user, kind, date) row guarantees at most one daily email.
+      const id = await boss.send(QUEUES.dailyReport, { userId: pref.userId, reportDate: due.date } satisfies DailyReportData, {
         singletonKey: `report:${pref.userId}:${due.date}`,
-        singletonHours: 1,
+        singletonMinutes: 9,
         retryLimit: 3,
         retryDelay: 120,
         retryBackoff: true,
       });
-      console.log(`dispatch: queued report for ${pref.userId} ${due.date}`);
+      console.log(id ? `dispatch: queued report for ${pref.userId} ${due.date} (job ${id})` : `dispatch: report for ${pref.userId} ${due.date} already queued`);
     }
   }
 }
@@ -104,7 +118,15 @@ async function main() {
   await boss.work(QUEUES.dispatch, async () => dispatch(boss));
   await boss.work<ResearchRunData>(QUEUES.researchRun, { batchSize: 1 }, async ([job]) => handleResearchRun(job.data));
   await boss.work<ResearchOpportunityData>(QUEUES.researchOpportunity, { batchSize: 1 }, async ([job]) => {
-    await researchOpportunityById(job.data.opportunityId, null);
+    const { opportunityId, requestedBy } = job.data;
+    try {
+      await assertWithinAiBudget(e.AI_DAILY_BUDGET_USD);
+    } catch (err) {
+      await notifyFailure(requestedBy, "Research not run", (err as Error).message, `budget:${opportunityId}:${job.id}`);
+      return; // don't retry: budget won't change within the retry window
+    }
+    // Tracked as its own job so tokens, searches and cost appear in the run log and count toward the budget.
+    await withJob("OPPORTUNITY_RESEARCH", `opp:${opportunityId}:${job.id}`, requestedBy, (jobId) => researchOpportunityById(opportunityId, jobId));
   });
   await boss.work<DailyReportData>(QUEUES.dailyReport, { batchSize: 1, includeMetadata: true }, async ([job]) =>
     handleDailyReport(job.data, job.retryCount >= job.retryLimit),

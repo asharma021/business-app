@@ -69,6 +69,31 @@ export async function finishJob(jobId: string, status: JobStatus) {
   await db.update(researchJobs).set({ status, finishedAt: new Date() }).where(eq(researchJobs.id, jobId));
 }
 
+export class BudgetExceededError extends Error {}
+
+/** Throws when the rolling 24h AI spend has reached AI_DAILY_BUDGET_USD (only enforced when prices are configured). */
+export async function assertWithinAiBudget(budgetUsd: number) {
+  const spent = await aiSpendLast24h();
+  if (spent !== null && spent >= budgetUsd) {
+    throw new BudgetExceededError(`AI budget reached: $${spent.toFixed(2)} spent in the last 24 hours (limit $${budgetUsd}). Raise AI_DAILY_BUDGET_USD or wait.`);
+  }
+}
+
+/** Runs fn inside a tracked job record so its AI usage and errors are logged and counted toward the budget. */
+export async function withJob<T>(kind: JobKind, key: string, triggeredBy: string, fn: (jobId: string) => Promise<T>): Promise<T> {
+  const jobId = await startJob(kind, key, triggeredBy);
+  if (!jobId) throw new Error(`Job ${key} already ran`);
+  try {
+    const out = await fn(jobId);
+    await finishJob(jobId, "SUCCEEDED");
+    return out;
+  } catch (e) {
+    await jobLog(jobId, "error", (e as Error).message);
+    await finishJob(jobId, "FAILED");
+    throw e;
+  }
+}
+
 /** AI spend recorded in the last 24h (null if prices aren't configured). */
 export async function aiSpendLast24h(): Promise<number | null> {
   const [row] = await db

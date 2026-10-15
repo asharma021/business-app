@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { dailyReports, emailDeliveries } from "@/db/schema";
 import { getOrCreatePreference } from "@/lib/preferences";
 import { Badge, EmptyState, PageHeader, Panel } from "@/components/ui";
+import { SendReportNowButton } from "@/components/ops-buttons";
 
 export const metadata = { title: "Daily intelligence" };
 
@@ -18,7 +19,7 @@ export default async function ReportsPage() {
   const time = `${String(pref.dailyReportHour).padStart(2, "0")}:${String(pref.dailyReportMinute).padStart(2, "0")}`;
   return (
     <>
-      <PageHeader title="Daily intelligence" description={`Generated every day at ${time} (${pref.timezone}) and ${pref.dailyEmailEnabled ? `emailed to ${pref.reportEmail ?? user.email}` : "not emailed (turned off in Settings)"}. Weekly and monthly summaries are planned for Phase 6.`} />
+      <PageHeader title="Daily intelligence" description={`Generated every day at ${time} (${pref.timezone}) and ${pref.dailyEmailEnabled ? `emailed to ${pref.reportEmail ?? user.email}` : "not emailed (turned off in Settings)"}. Weekly and monthly summaries are planned for Phase 6.`} actions={<SendReportNowButton />} />
       <Panel flush>
         {reports.length ? (
           <ul className="divide-y divide-line">

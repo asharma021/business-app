@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
  */
 export interface IncomeBarData {
   sde: number;
+  earningsBasis?: "SDE" | "EBITDA";
   annualDebtService: number;
   managerCost: number;
   maintenanceCapex: number;
@@ -17,14 +18,15 @@ export interface IncomeBarData {
 }
 
 export function IncomeBar({ data, target, minimum, compact = false }: { data: IncomeBarData | null; target: number; minimum: number; compact?: boolean }) {
-  if (!data) return <span className="text-sm text-faint">Needs price and cash flow</span>;
+  if (!data) return <span className="text-sm text-faint">Needs price and earnings</span>;
   const other = data.managerCost + data.maintenanceCapex + data.additionalOperatingCosts;
   const owner = data.afterTaxCashToOwner;
   const scale = Math.max(data.sde, target, 1);
   const w = (n: number) => `${Math.max(0, (n / scale) * 100)}%`;
   const tone = owner >= target ? "bg-gain" : owner >= minimum ? "bg-warn" : "bg-loss";
   const label = owner >= target ? "Meets target" : owner >= minimum ? "Above minimum, below target" : owner > 0 ? "Below minimum" : "Negative after debt";
-  const summary = `Reported SDE ${money(data.sde)}: debt ${money(data.annualDebtService)}, other ${money(other)}, est. tax ${money(data.estimatedTaxes)}, leaves ${money(owner)} to you. ${label}.`;
+  const basis = data.earningsBasis ?? "SDE";
+  const summary = `Reported ${basis} ${money(data.sde)}: debt ${money(data.annualDebtService)}, other ${money(other)}, est. tax ${money(data.estimatedTaxes)}, leaves ${money(owner)} to you. ${label}.`;
 
   return (
     <div className={cn("min-w-[160px]", compact ? "w-full" : "w-full max-w-md")} role="img" aria-label={summary} title={summary}>
@@ -46,7 +48,7 @@ export function IncomeBar({ data, target, minimum, compact = false }: { data: In
       </div>
       {!compact && (
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
-          <span>SDE {money(data.sde)}</span>
+          <span>{basis} {money(data.sde)}</span>
           <span>Debt {money(data.annualDebtService)}</span>
           {other > 0 && <span>Mgr/capex {money(other)}</span>}
           <span>Tax {money(data.estimatedTaxes)}</span>

@@ -72,13 +72,15 @@ The registry is shown in the app under **Research sources**. Only **Automated** 
 | Claude API web search (`web_search` tool) | **Automated** — needs `ANTHROPIC_API_KEY` | Finds public listing pages; also used in research. A candidate is kept only if its URL appeared in the actual search results. Figures are stored as *seller-reported, unverified*. Listing pages are not crawled. |
 | U.S. Census County Business Patterns API | **Automated** — works without a key at low volume; `CENSUS_API_KEY` recommended | Establishments, employees and payroll for 15 tracked service industries in the DFW metro (CBSA 19100). Market context, not listings. |
 | RSS feeds you add | **Automated once configured** | Any listing feed you're permitted to use. robots.txt is checked on every fetch. |
-| Manual URL import | Manual | Fetches the page once, and only if robots.txt allows it. Otherwise you paste the text. |
+| Manual URL import | Manual (needs Anthropic key) | Fetches the page once, and only if robots.txt allows it. Otherwise you paste the text. Claude extracts the fields. |
+| Manual entry form | Manual (no AI) | You type the figures. Tick "verified" when they're checked against tax returns or statements. |
+| CSV upload | Manual (no AI) | Up to 500 rows. Template at `/listing-import-template.csv`. |
 | Pasted text / document | Manual | Listing text, CIM excerpts, broker emails. |
 | BizBuySell, BizQuest, BusinessesForSale, LoopNet, Franchise Direct, Franchise Gator | Proposed — **not integrated** | No public listings API was identified. Use manual import, or obtain a licensed data feed and add a connector. |
 | BLS, FRED, SBA open data, WI/CA franchise (FDD) registries | Proposed — planned for Phase 2 | Documented public data. Not wired in yet. |
 | Google Trends, Reddit | Proposed — not automated | No general public API (Trends), or approval required (Reddit). |
 
-**Verification status.** None of these integrations have been exercised against the live services from the build environment: the sandbox's network allowlist blocked `api.census.gov` and `api.resend.com`, and no Anthropic key was available. The code paths are covered by tests that use fakes and recorded response shapes. Treat each integration as **unverified until your first run** — the Research sources page will show the first success or error for each.
+**Verification status.** None of these integrations have been called against the live services yet. The build environment's network blocked `api.census.gov` and `api.resend.com`, and no Anthropic key was available. The real Anthropic and Resend SDKs are tested against local mock servers that mirror each API's documented responses. The Census query matches the documented query shape. After deploying, **Research sources → Check connections** (or `npm run check:integrations`) makes one small real request to each service.
 
 ---
 
@@ -121,23 +123,21 @@ npm run build
 
 The integration suite runs the critical workflow end to end, with a fake LLM and a fake mailer. The listing is imported (including an embedded prompt injection, which is flagged rather than obeyed). Then it is saved, researched, audited (an invented source URL is stripped, the recommendation is capped), scored, included in the daily report, and emailed exactly once. GitHub Actions (`.github/workflows/ci.yml`) runs all of this on every push.
 
-## Deploy (Railway example)
+## Deploy
 
-1. Create a project with a **PostgreSQL** database, and turn on its automated backups.
-2. Add a service from this repo. Railway uses the `Dockerfile` and `railway.json`, which runs `npm run db:migrate` before each deploy, with `/api/health` as the health check. Set the variables above. This is the **web** service.
-3. Add a second service from the same repo with start command **`npm run worker`** and the same variables. This is the **worker**. Keep exactly one replica.
-4. Point your domain at the web service and set `APP_URL` to match. In Resend, verify the domain used in `EMAIL_FROM`.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)**. It covers the Railway walkthrough (Postgres, web and worker services, variables, migrations, custom domain), a verification sequence, cost estimates and troubleshooting.
 
-The web app can also run on Vercel. In that case, host the worker on Railway, Render or Fly. The worker must be a persistent process.
+Live check of every integration from any machine with the production variables:
+
+```bash
+npm run check:integrations                        # database, worker heartbeat, Anthropic, Census, Resend
+npm run check:integrations -- --web-search        # plus one real Claude web search (~$0.01)
+npm run check:integrations -- --email you@x.com   # plus a real test email
+```
 
 ## Verify after deploying
 
-1. Sign in with an allow-listed email.
-2. **Settings:** set your income goals, capital budget and financing assumptions.
-3. **Import a listing:** paste a real listing URL or its text. You should land on the opportunity page with seller-reported figures and an income bar.
-4. **Request updated research** on it. Within a few minutes the AI recommendation, sources and score breakdown appear.
-5. **Research sources → Run research now.** The run log shows each source's result, token usage and errors.
-6. The next morning, check **Daily intelligence** and your inbox. Each send is logged on that page.
+Follow section 5 of [DEPLOYMENT.md](DEPLOYMENT.md#5-verify-the-deployment-in-this-order).
 
 ---
 
@@ -146,16 +146,18 @@ The web app can also run on Vercel. In that case, host the worker on Railway, Re
 **Phase 1 — complete and tested**
 
 - Authentication: email magic link via Resend, optional Google sign-in, an allow-list, and database sessions.
-- Normalized schema (26 tables) with migrations, indexes and unique constraints that prevent duplicate opportunities and duplicate daily emails.
-- Automated discovery via Claude web search, Census market data and configurable RSS feeds; manual URL and text import.
+- Normalized schema (27 tables) with three migrations, indexes and unique constraints that prevent duplicate opportunities and duplicate daily emails.
+- Automated discovery via Claude web search, Census market data and configurable RSS feeds.
+- Three manual import methods: link or pasted text (AI extraction), a structured entry form, and CSV upload (no AI needed for the last two).
 - Cross-source deduplication (exact fingerprint plus fuzzy matching), with price and status change history.
 - AI research: business, market, competition, operations, risks and due-diligence questions, with citations. A deterministic auditor removes unverifiable URLs and caps recommendations while financials are unverified.
-- Salary-replacement calculator: SBA-style, conventional, seller and cash structures; owner-operated vs semi-absentee; DSCR; required SDE; break-even; payback; three scenarios; sensitivity analysis.
+- Salary-replacement calculator that keeps revenue, SDE, EBITDA, debt service and owner cash separate: it starts from SDE (or EBITDA when SDE isn't disclosed, without subtracting a manager twice) and never treats revenue as earnings. SBA-style, conventional, seller and cash structures; owner-operated vs semi-absentee; DSCR; required SDE; break-even; payback; three scenarios; sensitivity analysis.
 - Transparent 0–100 scoring with adjustable weights and evidence confidence caps, plus separate attractiveness, feasibility, confidence and fit scores.
 - Dashboard, searchable and filterable opportunity database, detail pages, watchlist, compare (up to 5), report archive, market data and source health.
-- Background worker: 7:00 AM Central default (configurable per user), manual "Run research now", retries, failure notifications, per-run metrics and logs.
+- Background worker: 7:00 AM Central default (configurable per user, DST-correct), manual "Run research now", retries, failure notifications, a heartbeat, and per-run metrics including AI cost. The AI budget cap applies to scheduled, on-demand and import usage.
+- Operations tools: **Send test email**, **Build and email today's report now**, **Check connections** (live checks of the database, worker, Anthropic, Census and Resend), and `npm run check:integrations`.
 - Daily email with every required section. When nothing qualifies, it says "No compelling opportunities found today."
-- Security: allow-listed auth, zod input validation, rate limits and audit log, SSRF-safe fetching, robots.txt compliance, prompt-injection containment, security headers.
+- Security: allow-listed auth that doesn't reveal which emails are allowed, sign-in links pinned to `APP_URL` (immune to Host-header poisoning), zod input validation, rate limits and audit log, SSRF-safe fetching, robots.txt compliance, prompt-injection containment, security headers.
 
 **Known gaps in Phase 1**
 
@@ -170,6 +172,6 @@ The web app can also run on Vercel. In that case, host the worker on Railway, Re
 
 ### Blockers that need you
 
-1. **API keys.** Anthropic and Resend keys (and ideally a Census key) are needed before discovery, research and email can run for real.
+1. **API keys.** Anthropic and Resend keys (and ideally a Census key) are needed before discovery, research and email can run for real. None of the three has been exercised live yet.
 2. **Listing data access.** If you want automated feeds from BizBuySell or similar marketplaces, that requires a licensing or data agreement with them. Until then, use manual import and any broker RSS feeds you're permitted to use.
 3. **Hosting.** Create the Postgres database and the web and worker services.

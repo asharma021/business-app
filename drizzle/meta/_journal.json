@@ -8,6 +8,20 @@
       "when": 1792094355210,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792098910062,
+      "tag": "0001_job_kind_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792099006311,
+      "tag": "0002_worker_heartbeat",
+      "breakpoints": true
     }
   ]
 }

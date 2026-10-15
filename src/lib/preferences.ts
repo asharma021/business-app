@@ -44,9 +44,13 @@ export function weightsOf(p: Pick<Preference, "scoringWeights">): Weights {
 /** Build calculator inputs for an opportunity using the user's saved assumptions. */
 export function calculatorInputsFor(
   pref: Preference,
-  deal: { askingPrice: number | null; cashFlow: number | null; revenue: number | null; payroll?: number | null },
+  deal: { askingPrice: number | null; cashFlow: number | null; ebitda?: number | null; revenue: number | null; payroll?: number | null },
 ): CalculatorInputs | null {
-  if (deal.askingPrice == null || deal.cashFlow == null) return null;
+  if (deal.askingPrice == null) return null;
+  // Prefer reported SDE (cash flow); fall back to EBITDA on an EBITDA basis. Never revenue.
+  const basis = deal.cashFlow != null ? "SDE" : deal.ebitda != null ? "EBITDA" : null;
+  if (!basis) return null;
+  const earnings = basis === "SDE" ? deal.cashFlow! : deal.ebitda!;
   const d = financingDefaultsOf(pref);
   const financing: FinancingInputs = {
     structure: d.structure,
@@ -58,7 +62,7 @@ export function calculatorInputsFor(
   };
   const operating: OperatingInputs = d.operating;
   return {
-    deal: { purchasePrice: deal.askingPrice, sde: deal.cashFlow, revenue: deal.revenue, payroll: deal.payroll ?? null },
+    deal: { purchasePrice: deal.askingPrice, sde: earnings, earningsBasis: basis, revenue: deal.revenue, payroll: deal.payroll ?? null },
     financing,
     operating,
     targets: { target: pref.targetOwnerIncome, minimum: pref.minOwnerIncome, stretch: pref.stretchOwnerIncome },

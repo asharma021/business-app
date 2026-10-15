@@ -8,6 +8,11 @@ import { accounts, auditLogs, sessions, users, verificationTokens } from "@/db/s
 import { env, features } from "@/lib/env";
 import { getOrCreatePreference } from "@/lib/preferences";
 
+// Pin Auth.js to the configured public URL. Without this, sign-in links are built from the
+// request's Host / X-Forwarded-Host header, which an attacker can forge to send you a working
+// sign-in link that points at their domain.
+if (!process.env.AUTH_URL && process.env.APP_URL) process.env.AUTH_URL = process.env.APP_URL;
+
 /** Lazily built so `next build` doesn't need secrets. */
 function config(): NextAuthConfig {
   const e = env();
@@ -33,7 +38,7 @@ function config(): NextAuthConfig {
     adapter: DrizzleAdapter(db, { usersTable: users, accountsTable: accounts, sessionsTable: sessions, verificationTokensTable: verificationTokens }),
     session: { strategy: "database", maxAge: 30 * 24 * 3600 },
     providers,
-    pages: { signIn: "/login", verifyRequest: "/login?sent=1", error: "/login" },
+    pages: { signIn: "/login", verifyRequest: "/login/verify", error: "/login" },
     callbacks: {
       // Personal app: only allow-listed emails can sign in (or receive a link).
       async signIn({ user, email }) {

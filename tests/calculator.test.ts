@@ -106,3 +106,33 @@ describe("scenarios & sensitivity", () => {
     expect(b.afterTaxCashToOwner + r10.delta!).toBe(r10.afterTaxCashToOwner);
   });
 });
+
+describe("earnings definitions", () => {
+  it("revenue never changes owner cash — only the stated earnings figure does", () => {
+    const a = calculate(base({ deal: { purchasePrice: 1_000_000, sde: 400_000, revenue: 1_000_000 } }));
+    const b = calculate(base({ deal: { purchasePrice: 1_000_000, sde: 400_000, revenue: 9_000_000 } }));
+    expect(a.afterTaxCashToOwner).toBe(b.afterTaxCashToOwner);
+  });
+  it("EBITDA basis never subtracts a manager again (it's already paid in EBITDA)", () => {
+    const semi = { ...DEFAULT_OPERATING, ownerRole: "SEMI_ABSENTEE" as const, managerSalary: 80_000 };
+    const sde = calculate(base({ deal: { purchasePrice: 1_000_000, sde: 400_000 }, operating: semi }));
+    const ebitda = calculate(base({ deal: { purchasePrice: 1_000_000, sde: 400_000, earningsBasis: "EBITDA" }, operating: semi }));
+    expect(sde.managerCost).toBe(80_000);
+    expect(ebitda.managerCost).toBe(0);
+    expect(ebitda.earningsBasis).toBe("EBITDA");
+    expect(ebitda.incomeKind).toBe("PASSIVE_INVESTMENT_INCOME");
+    expect(ebitda.warnings.join(" ")).toMatch(/already pays a manager/);
+  });
+  it("walks earnings → debt service → tax → owner cash with exact arithmetic", () => {
+    const r = calculate(base());
+    expect(r.earningsBeforeDebtService).toBe(r.sde - r.managerCost - r.maintenanceCapex - r.additionalOperatingCosts);
+    expect(r.preTaxCashToOwner).toBe(r.earningsBeforeDebtService - r.annualDebtService);
+    expect(r.estimatedTaxes).toBe(Math.round(Math.max(0, r.earningsBeforeDebtService - (r.seniorLoan!.firstYearInterest)) * 0.25));
+    expect(r.afterTaxCashToOwner).toBe(r.preTaxCashToOwner - r.estimatedTaxes);
+    expect(r.monthlyAfterTaxCash).toBe(Math.round(r.afterTaxCashToOwner / 12));
+  });
+  it("principal repayment is not tax-deductible: taxes exceed tax on (earnings − total debt service)", () => {
+    const r = calculate(base());
+    expect(r.estimatedTaxes).toBeGreaterThan(Math.round((r.earningsBeforeDebtService - r.annualDebtService) * 0.25));
+  });
+});

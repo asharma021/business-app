@@ -1,7 +1,8 @@
 import { requireUser } from "@/auth";
 import { financingDefaultsOf, getOrCreatePreference, weightsOf } from "@/lib/preferences";
 import { features } from "@/lib/env";
-import { PageHeader } from "@/components/ui";
+import { PageHeader, Panel } from "@/components/ui";
+import { SendTestEmailButton } from "@/components/ops-buttons";
 import { SettingsForm } from "./settings-form";
 
 export const metadata = { title: "Settings" };
@@ -19,6 +20,12 @@ export default async function SettingsPage() {
         userEmail={user.email}
         emailConfigured={features.email()}
       />
+      <div className="mt-6 max-w-4xl">
+        <Panel title="Email delivery">
+          <p className="mb-3 text-sm text-muted">Sends a short message to {pref.reportEmail ?? user.email} through Resend to confirm your key and sending domain work. Save settings first if you changed the address.</p>
+          <SendTestEmailButton />
+        </Panel>
+      </div>
     </>
   );
 }

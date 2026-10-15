@@ -24,12 +24,13 @@ export default async function CalculatorPage({ searchParams }: { searchParams: P
         initial={{
           title: o?.title ?? null,
           purchasePrice: o?.askingPrice ?? 1_000_000,
-          sde: o?.cashFlow ?? 350_000,
+          sde: o?.cashFlow ?? o?.ebitda ?? 350_000,
+          earningsBasis: o && o.cashFlow == null && o.ebitda != null ? "EBITDA" : "SDE",
           revenue: o?.revenue ?? null,
           financing: fd,
           targets: { target: pref.targetOwnerIncome, minimum: pref.minOwnerIncome, stretch: pref.stretchOwnerIncome },
           fromOpportunity: Boolean(o),
-          missing: o ? [o.askingPrice == null && "asking price", o.cashFlow == null && "cash flow"].filter(Boolean) as string[] : [],
+          missing: o ? [o.askingPrice == null && "asking price", o.cashFlow == null && o.ebitda == null && "earnings (SDE or EBITDA)"].filter(Boolean) as string[] : [],
         }}
       />
     </>

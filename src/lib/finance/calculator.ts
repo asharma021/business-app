@@ -20,10 +20,19 @@ export interface LoanTerms {
   termYears: number;
 }
 
+export type EarningsBasis = "SDE" | "EBITDA";
+
 export interface DealInputs {
   purchasePrice: number;
-  /** annual SDE / reported cash flow */
+  /**
+   * Annual earnings the analysis starts from (named `sde` for historical reasons).
+   * SDE  = earnings before ONE owner's salary/perks (what most small-business listings report).
+   * EBITDA = earnings AFTER paying a market-rate owner/manager salary.
+   * Revenue is never treated as earnings.
+   */
   sde: number;
+  /** defaults to "SDE" */
+  earningsBasis?: EarningsBasis;
   /** annual revenue — optional; needed for revenue sensitivity */
   revenue?: number | null;
   /** annual payroll excl. owner — optional; needed for payroll sensitivity */
@@ -74,6 +83,7 @@ export interface LoanResult {
 }
 
 export interface CalculatorResult {
+  earningsBasis: EarningsBasis;
   // Upfront
   downPayment: number;
   closingCosts: number;
@@ -207,7 +217,9 @@ export function calculate(input: CalculatorInputs): CalculatorResult {
   const annualDebtService = (seniorLoan?.annualPayment ?? 0) + (sellerNote?.annualPayment ?? 0);
   const firstYearInterest = (seniorLoan?.firstYearInterest ?? 0) + (sellerNote?.firstYearInterest ?? 0);
 
-  const managerCost = o.ownerRole === "SEMI_ABSENTEE" ? round(o.managerSalary) : 0;
+  const basis: EarningsBasis = deal.earningsBasis ?? "SDE";
+  // EBITDA already deducts a market-rate manager/owner salary, so never subtract one again.
+  const managerCost = basis === "SDE" && o.ownerRole === "SEMI_ABSENTEE" ? round(o.managerSalary) : 0;
   const deductions = managerCost + round(o.maintenanceCapex) + round(o.additionalOperatingCosts);
   const ebds = round(deal.sde) - deductions; // earnings before debt service
   const preTaxCashToOwner = ebds - annualDebtService;
@@ -230,13 +242,18 @@ export function calculate(input: CalculatorInputs): CalculatorResult {
   if (dscrBelowThreshold)
     warnings.push(`Debt service coverage ${dscr!.toFixed(2)}× is below ${o.dscrThreshold}× — lenders may decline or require more equity.`);
   if (preTaxCashToOwner < 0) warnings.push("Business earnings do not cover debt service under these assumptions.");
-  if (o.ownerRole === "OWNER_OPERATED")
+  if (basis === "EBITDA")
+    warnings.push(
+      "Based on EBITDA, which already pays a manager/owner salary. If you run the business yourself you may also draw that salary — it is not included here.",
+    );
+  else if (o.ownerRole === "OWNER_OPERATED")
     warnings.push("Owner-operated: this cash is compensation for working in the business full-time, not passive income.");
 
   const cashOnCashReturnPct = upfrontInvestment > 0 ? (afterTaxCashToOwner / upfrontInvestment) * 100 : null;
   const paybackYears = afterTaxCashToOwner > 0 && upfrontInvestment > 0 ? upfrontInvestment / afterTaxCashToOwner : null;
 
   return {
+    earningsBasis: basis,
     downPayment,
     closingCosts,
     workingCapitalReserve: round(f.workingCapitalReserve),
@@ -256,7 +273,7 @@ export function calculate(input: CalculatorInputs): CalculatorResult {
     estimatedTaxes,
     afterTaxCashToOwner,
     monthlyAfterTaxCash: round(afterTaxCashToOwner / 12),
-    incomeKind: o.ownerRole === "OWNER_OPERATED" ? "OWNER_COMPENSATION_FOR_WORKING" : "PASSIVE_INVESTMENT_INCOME",
+    incomeKind: basis === "SDE" && o.ownerRole === "OWNER_OPERATED" ? "OWNER_COMPENSATION_FOR_WORKING" : "PASSIVE_INVESTMENT_INCOME",
     meetsMinimum: afterTaxCashToOwner >= targets.minimum,
     meetsTarget: afterTaxCashToOwner >= targets.target,
     meetsStretch: afterTaxCashToOwner >= targets.stretch,

@@ -21,6 +21,7 @@ interface Initial {
   title: string | null;
   purchasePrice: number;
   sde: number;
+  earningsBasis: "SDE" | "EBITDA";
   revenue: number | null;
   financing: FinancingDefaults;
   targets: IncomeTargets;
@@ -49,6 +50,7 @@ export function CalculatorClient({ initial }: { initial: Initial }) {
   const [s, setS] = useState({
     price: initial.purchasePrice as number | null,
     sde: initial.sde as number | null,
+    basis: initial.earningsBasis,
     revenue: initial.revenue,
     payroll: null as number | null,
     structure: f.structure as FinancingStructure,
@@ -91,7 +93,7 @@ export function CalculatorClient({ initial }: { initial: Initial }) {
   const inputs: CalculatorInputs | null = useMemo(() => {
     if (s.price == null || s.sde == null || s.target == null || s.minimum == null) return null;
     return {
-      deal: { purchasePrice: s.price, sde: s.sde, revenue: s.revenue, payroll: s.payroll },
+      deal: { purchasePrice: s.price, sde: s.sde, earningsBasis: s.basis, revenue: s.revenue, payroll: s.payroll },
       financing: {
         structure: s.structure,
         downPaymentPct: s.down / 100,
@@ -135,7 +137,15 @@ export function CalculatorClient({ initial }: { initial: Initial }) {
         <Panel title="The deal">
           <div className="grid grid-cols-2 gap-3">
             <Num id="price" label="Purchase price" value={s.price} onChange={set("price")} suffix="$" step={10000} />
-            <Num id="sde" label="SDE / cash flow" value={s.sde} onChange={set("sde")} suffix="$/yr" step={5000} />
+            <Num id="sde" label={s.basis === "SDE" ? "SDE / cash flow" : "EBITDA"} value={s.sde} onChange={set("sde")} suffix="$/yr" step={5000} />
+            <div className="col-span-2">
+              <Field label="These earnings are" htmlFor="basis" hint={s.basis === "SDE" ? "Before any owner salary — most small-business listings report this." : "After a market-rate manager/owner salary — no manager cost is subtracted again."}>
+                <Select id="basis" value={s.basis} onChange={(e) => set("basis")(e.target.value as "SDE" | "EBITDA")}>
+                  <option value="SDE">SDE (seller's discretionary earnings)</option>
+                  <option value="EBITDA">EBITDA</option>
+                </Select>
+              </Field>
+            </div>
             <Num id="revenue" label="Revenue" value={s.revenue} onChange={set("revenue")} suffix="$/yr" step={10000} hint="Needed for revenue sensitivity" />
             <Num id="payroll" label="Payroll" value={s.payroll} onChange={set("payroll")} suffix="$/yr" step={5000} hint="Needed for payroll sensitivity" />
           </div>

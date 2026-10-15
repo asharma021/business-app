@@ -28,13 +28,17 @@ export function buildCbpUrl(cfg: CbpConfig, naics: string, key?: string): string
   u.searchParams.set("get", `NAME,${cfg.naicsVar}_LABEL,ESTAB,EMP,PAYANN`);
   u.searchParams.set("for", `metropolitan statistical area/micropolitan statistical area:${cfg.cbsa}`);
   u.searchParams.set(cfg.naicsVar, naics);
-  // Totals across all employment sizes and legal forms.
+  // Totals across all employment sizes (EMPSZES=001) and all legal forms (LFO=001),
+  // per the Census CBP API examples. Without LFO the API returns one row per legal form.
+  u.searchParams.set("LFO", "001");
   u.searchParams.set("EMPSZES", "001");
   if (key) u.searchParams.set("key", key);
   return u.toString();
 }
 
 const num = (v: unknown) => {
+  // Census uses null/empty for suppressed cells — those must stay null, never become 0.
+  if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n) : null;
 };
@@ -43,6 +47,8 @@ const num = (v: unknown) => {
 export function parseCbpResponse(json: unknown, cfg: CbpConfig, naics: string): CbpRow | null {
   if (!Array.isArray(json) || json.length < 2 || !Array.isArray(json[0])) return null;
   const header = (json[0] as string[]).map(String);
+  // Expect exactly one total row; if filters ever return several, refuse rather than guess.
+  if (json.length !== 2) return null;
   const row = json[1] as unknown[];
   const col = (name: string) => row[header.indexOf(name)];
   return {
